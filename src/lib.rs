@@ -62,6 +62,7 @@ pub struct ToolUse {
     pub r#type: &'static str,
     pub name: String,
     pub params: HashMap<String, String>,
+    param_order: Vec<String>,
     pub partial: bool,
 }
 
@@ -71,6 +72,7 @@ impl ToolUse {
             r#type: "tool_use",
             name,
             params: HashMap::new(),
+            param_order: Vec::new(),
             partial,
         }
     }
@@ -80,7 +82,10 @@ impl ToolUse {
         xml.push('<');
         xml.push_str(&self.name);
         xml.push('>');
-        for (key, value) in &self.params {
+        for key in &self.param_order {
+            let Some(value) = self.params.get(key) else {
+                continue;
+            };
             xml.push('\n');
             xml.push('<');
             xml.push_str(key);
@@ -405,6 +410,9 @@ impl AssistantMessageParser {
             return;
         };
         if let ContentBlock::ToolUse(tool) = &mut self.content_blocks[tool_index] {
+            if !tool.params.contains_key(name) {
+                tool.param_order.push(name.to_owned());
+            }
             tool.params.insert(name.to_owned(), value);
         }
     }
@@ -429,6 +437,9 @@ impl AssistantMessageParser {
 
         let value = normalize_param_value("content", &tool_content[start..end]);
         if let ContentBlock::ToolUse(tool) = &mut self.content_blocks[tool_index] {
+            if !tool.params.contains_key("content") {
+                tool.param_order.push("content".to_owned());
+            }
             tool.params.insert("content".to_owned(), value);
         }
     }

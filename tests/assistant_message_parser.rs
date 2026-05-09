@@ -556,3 +556,65 @@ fn search_files_block_has_expected_shape() {
     assert_eq!(tool.params.get("regex").unwrap(), "<div>.*</div>");
     assert_eq!(tool.params.get("path").unwrap(), "src");
 }
+
+#[test]
+fn streams_display_text_while_collecting_only_completed_tool_calls() {
+    let mut parser = test_parser();
+    // let message = concat!(
+    //     "I will inspect the file. ",
+    //     "<read_file><path>src/main.rs</path></read_file>",
+    //     " Then I will search. ",
+    //     "<search_files><regex>fn main</regex><path>src</path></search_files>",
+    //     " Done."
+    // );
+    let message = concat!(
+        "I will inspect the file. ",
+        "<read_fil",
+        "e><path>src/mai",
+        "n.rs</path></read_file>",
+        " Then I will search. ",
+        "<search_files><regex>fn main</regex><path>src</path></search_files>",
+        " Done."
+    );
+
+    let mut show_text = String::new();
+    let mut show_text_chunks = vec![];
+    let mut completed_tool_xml = Vec::new();
+    let mut seen_completed_tool_count = 0;
+
+    for ch in message.chars() {
+        let blocks = parser.process_chunk(&ch.to_string()).unwrap();
+
+        while let Some(text_chunk) = parser.next_text_chunk() {
+            show_text.push_str(&text_chunk);
+            show_text_chunks.push(show_text.clone());
+        }
+
+        let completed_tools = blocks
+            .iter()
+            .filter_map(|block| match block {
+                ContentBlock::ToolUse(tool) if !tool.partial => Some(tool),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        for tool in completed_tools.iter().skip(seen_completed_tool_count) {
+            completed_tool_xml.push(tool.to_xml());
+        }
+        seen_completed_tool_count = completed_tools.len();
+    }
+
+    assert_eq!(
+        show_text,
+        "I will inspect the file. Then I will search. Done."
+    );
+    assert_eq!(completed_tool_xml.len(), 2);
+    assert_eq!(
+        completed_tool_xml[0],
+        "<read_file>\n<path>src/main.rs</path>\n</read_file>"
+    );
+    assert_eq!(
+        completed_tool_xml[1],
+        "<search_files>\n<regex>fn main</regex>\n<path>src</path>\n</search_files>"
+    );
+}

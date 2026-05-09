@@ -57,9 +57,62 @@ let parser = AssistantMessageParser::new(
 );
 ```
 
+## Classic Streaming Case
+
+This mirrors the common LLM streaming flow: show normal assistant text as soon as it is safe to display, while separately collecting only completed tool calls.
+
+```rust
+use assistant_message_parser::{AssistantMessageParser, ContentBlock};
+
+let mut parser = AssistantMessageParser::new(
+    Some(vec!["read_file".into(), "search_files".into()]),
+    Some(vec!["path".into(), "regex".into()]),
+);
+
+let response_chunks = [
+    "I will inspect the file. ",
+    "<read_file><path>src/main.rs</path></read_file>",
+    " Then I will search. ",
+    "<search_files><regex>fn main</regex><path>src</path></search_files>",
+    " Done.",
+];
+
+let mut show_text = String::new();
+let mut completed_tool_xml = Vec::new();
+let mut seen_completed_tool_count = 0;
+
+for chunk in response_chunks {
+    let parsed_blocks = parser.process_chunk(chunk).unwrap();
+
+    while let Some(text_chunk) = parser.next_text_chunk() {
+        if !text_chunk.trim().is_empty() {
+            // Send this delta to the UI.
+            show_text.push_str(&text_chunk);
+        }
+    }
+
+    let completed_tools = parsed_blocks
+        .iter()
+        .filter_map(|block| match block {
+            ContentBlock::ToolUse(tool) if !tool.partial => Some(tool),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    for tool in completed_tools.iter().skip(seen_completed_tool_count) {
+        completed_tool_xml.push(tool.to_xml());
+    }
+    seen_completed_tool_count = completed_tools.len();
+}
+
+assert_eq!(show_text, "I will inspect the file. Then I will search. Done.");
+assert_eq!(completed_tool_xml.len(), 2);
+```
+
+`next_text_chunk()` intentionally holds back text that may still be the prefix of a tool tag, so UI display does not briefly show `<read_file` before the parser can decide whether it is plain text or a real tool call.
+
 ## Test
 
 ```bash
 cargo test
 ```
-
