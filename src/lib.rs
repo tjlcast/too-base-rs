@@ -501,3 +501,126 @@ fn normalize_param_value(param_name: &str, raw_value: &str) -> String {
         raw_value.trim().to_owned()
     }
 }
+
+#[cfg(target_arch = "wasm32")]
+mod wasm {
+    use super::{AssistantMessageParser, ContentBlock, ParserError};
+    use js_sys::{Array, Object, Reflect};
+    use wasm_bindgen::prelude::*;
+
+    #[wasm_bindgen(js_name = AssistantMessageParser)]
+    pub struct WasmAssistantMessageParser {
+        parser: AssistantMessageParser,
+    }
+
+    #[wasm_bindgen(js_class = AssistantMessageParser)]
+    impl WasmAssistantMessageParser {
+        #[wasm_bindgen(constructor)]
+        pub fn new(tool_names: JsValue, tool_param_names: JsValue) -> Result<Self, JsValue> {
+            let tool_names = optional_string_array(&tool_names, "toolNames")?;
+            let tool_param_names = optional_string_array(&tool_param_names, "toolParamNames")?;
+
+            Ok(Self {
+                parser: AssistantMessageParser::new(tool_names, tool_param_names),
+            })
+        }
+
+        pub fn default() -> Self {
+            Self {
+                parser: AssistantMessageParser::default(),
+            }
+        }
+
+        pub fn reset(&mut self) {
+            self.parser.reset();
+        }
+
+        #[wasm_bindgen(js_name = processChunk)]
+        pub fn process_chunk(&mut self, chunk: &str) -> Result<JsValue, JsValue> {
+            self.parser
+                .process_chunk(chunk)
+                .map(blocks_to_js)
+                .map_err(parser_error_to_js)
+        }
+
+        #[wasm_bindgen(js_name = getContentBlocks)]
+        pub fn get_content_blocks(&self) -> JsValue {
+            blocks_to_js(self.parser.get_content_blocks())
+        }
+
+        #[wasm_bindgen(js_name = finalizeContentBlocks)]
+        pub fn finalize_content_blocks(&mut self) {
+            self.parser.finalize_content_blocks();
+        }
+
+        #[wasm_bindgen(js_name = nextTextChunk)]
+        pub fn next_text_chunk(&mut self) -> Option<String> {
+            self.parser.next_text_chunk()
+        }
+    }
+
+    fn optional_string_array(value: &JsValue, name: &str) -> Result<Option<Vec<String>>, JsValue> {
+        if value.is_undefined() || value.is_null() {
+            return Ok(None);
+        }
+
+        if !Array::is_array(value) {
+            return Err(js_error(&format!("{name} must be an array of strings")));
+        }
+
+        let array = Array::from(value);
+        let mut strings = Vec::with_capacity(array.length() as usize);
+        for item in array.iter() {
+            let Some(item) = item.as_string() else {
+                return Err(js_error(&format!("{name} must be an array of strings")));
+            };
+            strings.push(item);
+        }
+
+        Ok(Some(strings))
+    }
+
+    fn blocks_to_js(blocks: Vec<ContentBlock>) -> JsValue {
+        let array = Array::new();
+        for block in blocks {
+            array.push(&block_to_js(block));
+        }
+        array.into()
+    }
+
+    fn block_to_js(block: ContentBlock) -> JsValue {
+        let object = Object::new();
+        match block {
+            ContentBlock::Text(text) => {
+                set(&object, "type", JsValue::from_str(text.r#type));
+                set(&object, "content", JsValue::from_str(&text.content));
+                set(&object, "partial", JsValue::from_bool(text.partial));
+            }
+            ContentBlock::ToolUse(tool) => {
+                set(&object, "type", JsValue::from_str(tool.r#type));
+                set(&object, "name", JsValue::from_str(&tool.name));
+                set(&object, "partial", JsValue::from_bool(tool.partial));
+                set(&object, "xml", JsValue::from_str(&tool.to_xml()));
+
+                let params = Object::new();
+                for (key, value) in tool.params {
+                    set(&params, &key, JsValue::from_str(&value));
+                }
+                set(&object, "params", params.into());
+            }
+        }
+        object.into()
+    }
+
+    fn set(object: &Object, key: &str, value: JsValue) {
+        Reflect::set(object, &JsValue::from_str(key), &value).expect("setting object property");
+    }
+
+    fn parser_error_to_js(error: ParserError) -> JsValue {
+        js_error(&error.to_string())
+    }
+
+    fn js_error(message: &str) -> JsValue {
+        js_sys::Error::new(message).into()
+    }
+}

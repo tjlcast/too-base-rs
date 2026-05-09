@@ -7,7 +7,7 @@ The crate is intentionally small and wasm-friendly:
 - no filesystem, process, networking, thread, or timer APIs;
 - no runtime dependencies;
 - parser state is incremental, so callers can feed streaming chunks without reparsing the full message externally;
-- library output uses owned Rust structs that can later be exposed with `wasm-bindgen` or another wasm boundary layer.
+- library output uses owned Rust structs, with a `wasm-bindgen` wrapper for Node.js consumers.
 
 ## Behavior
 
@@ -56,6 +56,34 @@ let parser = AssistantMessageParser::new(
     Some(vec!["path".into(), "content".into()]),
 );
 ```
+
+## Node.js Wasm Usage
+
+Build the Node.js wasm package into `pkg/`:
+
+```bash
+npm run build:wasm
+```
+
+Then require the generated package:
+
+```js
+const { AssistantMessageParser } = require("./pkg/assistant_message_parser.js");
+
+const parser = new AssistantMessageParser(["read_file"], ["path"]);
+const blocks = parser.processChunk("<read_file><path>src/main.rs</path></read_file>");
+
+console.log(blocks[0]);
+// {
+//   type: "tool_use",
+//   name: "read_file",
+//   params: { path: "src/main.rs" },
+//   partial: false,
+//   xml: "<read_file>\n<path>src/main.rs</path>\n</read_file>"
+// }
+```
+
+The wasm wrapper also exposes `reset()`, `getContentBlocks()`, `finalizeContentBlocks()`, and `nextTextChunk()`.
 
 ## Classic Streaming Case
 
@@ -115,4 +143,5 @@ assert_eq!(completed_tool_xml.len(), 2);
 
 ```bash
 cargo test
+npm run test:wasm
 ```

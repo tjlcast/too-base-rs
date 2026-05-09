@@ -1,0 +1,9 @@
+{
+  "name": "assistant-message-parser-rs",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build:wasm": "wasm-pack build --target nodejs --out-dir pkg",
+    "test:wasm": "npm run build:wasm && node tests/assistant_message_parser.wasm.test.cjs"
+  }
+}
