@@ -1,0 +1,13 @@
+[package]
+name = "assistant-message-parser"
+version = "0.1.0"
+edition = "2021"
+description = "Streaming parser for assistant text and XML-like tool-use blocks."
+license = "MIT"
+
+[lib]
+name = "assistant_message_parser"
+path = "src/lib.rs"
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
