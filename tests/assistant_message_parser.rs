@@ -45,6 +45,7 @@ fn test_parser() -> AssistantMessageParser {
             ["question", "follow_up"].as_slice(),
         ),
         ("new_rule", [].as_slice()),
+        ("echo", ["message"].as_slice()),
     ];
 
     let tool_names = tools
@@ -179,6 +180,37 @@ fn parses_text_followed_by_tool_use() {
         panic!("expected tool");
     };
     assert_eq!(tool.params.get("path").unwrap(), "src/file.ts");
+    assert!(!tool.partial);
+}
+
+#[test]
+fn parses_echo_tool_use_from_split_chunks() {
+    let mut parser = test_parser();
+
+    parser
+        .process_chunk("Let's echo ")
+        .expect("chunk should parse");
+    parser.process_chunk("<ec").expect("chunk should parse");
+    parser.process_chunk("ho><").expect("chunk should parse");
+    parser
+        .process_chunk("message>Hello")
+        .expect("chunk should parse");
+    parser
+        .process_chunk(" world</me")
+        .expect("chunk should parse");
+    parser
+        .process_chunk("ssage></e")
+        .expect("chunk should parse");
+    let result = parser.process_chunk("cho>").expect("chunk should parse");
+
+    assert_eq!(result.len(), 2);
+    assert!(matches!(&result[0], ContentBlock::Text(text) if text.content == "Let's echo"));
+
+    let ContentBlock::ToolUse(tool) = &result[1] else {
+        panic!("expected tool");
+    };
+    assert_eq!(tool.name, "echo");
+    assert_eq!(tool.params.get("message").unwrap(), "Hello world");
     assert!(!tool.partial);
 }
 

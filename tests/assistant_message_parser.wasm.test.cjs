@@ -34,6 +34,7 @@ function testParser() {
     ["execute_command", ["command"]],
     ["ask_followup_question", ["question", "follow_up"]],
     ["new_rule", []],
+    ["echo", ["message"]],
   ];
 
   const toolNames = tools.map(([name]) => name);
@@ -130,6 +131,26 @@ test("parses text followed by tool use", () => {
   assert.equal(result[0].partial, false);
   assert.equal(result[1].type, "tool_use");
   assert.equal(result[1].params.path, "src/file.ts");
+  assert.equal(result[1].partial, false);
+});
+
+test("parses echo tool use from split chunks", () => {
+  const parser = testParser();
+
+  parser.processChunk("Let's echo ");
+  parser.processChunk("<ec");
+  parser.processChunk("ho><");
+  parser.processChunk("message>Hello");
+  parser.processChunk(" world</me");
+  parser.processChunk("ssage></e");
+  const result = parser.processChunk("cho>");
+
+  assert.equal(result.length, 2);
+  assert.equal(result[0].type, "text");
+  assert.equal(result[0].content, "Let's echo");
+  assert.equal(result[1].type, "tool_use");
+  assert.equal(result[1].name, "echo");
+  assert.equal(result[1].params.message, "Hello world");
   assert.equal(result[1].partial, false);
 });
 
